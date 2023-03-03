@@ -12,33 +12,65 @@ router.get('/', async (req, res, next) => {
     }
 })
 
+// Change this route:
+
+// when viewing details for a company, you can see the names of the industries for that company
+
 router.get('/:code', async (req, res, next) => {
     try {
         const { code } = req.params
-        const results = await db.query(`SELECT * FROM companies WHERE code = $1`, [code])
-        if(results.rows.length === 0) {
+
+        const compResults = await db.query(
+            `SELECT code, name, description 
+            FROM companies 
+            WHERE code = $1`, 
+            [code]
+            );
+
+        if(compResults.rows.length === 0) {
             throw new ExpressError(`Cannot find company with code of ${code}`, 404)
         }
-        return res.send({company: results.rows[0]})
+
+        const invResult = await db.query(
+            `SELECT id, amt
+             FROM invoices
+             WHERE comp_code = $1`,
+          [code]
+        );
+
+        const deptResult = await db.query(
+            `SELECT c.code, c.name, i.field
+             FROM companies as c
+             LEFT JOIN departments as dept
+             ON c.code = dept.company_code
+             LEFT JOIN industries AS i
+             ON dept.industry_code = i.code
+             WHERE c.code = $1`,
+          [code]
+        );
+        
+        console.log(deptResult.rows, 'i am dept result')
+
+        const company = compResults.rows[0];
+        const invoices = invResult.rows;
+        const departments = deptResult.rows;
+
+        company.invoices = invoices.map(inv => inv.id)
+        company.departments = departments.map(d => d.field)
+
+        return res.send({company: company})
     }
     catch(e) {
         return next(e)
     }
 }) 
 
-// POST /companies
-// Adds a company.
-
-// Needs to be given JSON like: {code, name, description}
-
-// Returns obj of new company: {company: {code, name, description}}
-
 
 router.post('/', async (req, res, next) => {
     try {
         const { code, name, description } = req.body
         const results = await db.query('INSERT INTO companies (code, name, description) VALUES ($1, $2, $3) RETURNING code, name, description', [code, name, description])
-        return res.status(201).json({company: results.rows})
+        return res.status(201).json({company: results.rows[0]})
     } catch (e) {
         return next(e)
     }
